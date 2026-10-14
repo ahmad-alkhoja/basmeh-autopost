@@ -1,0 +1,50 @@
+name: Basmeh auto-post
+
+on:
+  schedule:
+    # Sun, Tue, Thu at 16:45 UTC = 7:45 PM Amman. GitHub often starts
+    # scheduled runs a few minutes late, so the post lands around 8 PM.
+    - cron: "45 16 * * 0,2,4"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = test the setup (posts nothing), post = publish the next post now"
+        type: choice
+        options: [check, post]
+        default: check
+      post_id:
+        description: "Optional: publish this exact post id (e.g. 99_occasion_greeting_template)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: basmeh-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish
+        env:
+          PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
+          POST_TO_FACEBOOK: ${{ vars.POST_TO_FACEBOOK || 'true' }}
+          MODE: ${{ inputs.mode || 'post' }}
+          POST_ID: ${{ inputs.post_id }}
+        run: python3 post.py
+
+      - name: Save progress
+        if: always()
+        run: |
+          if ! git diff --quiet state.json; then
+            git config user.name  "basmeh-bot"
+            git config user.email "basmeh-bot@users.noreply.github.com"
+            git add state.json
+            git commit -m "Posted $(python3 -c 'import json;print(json.load(open("state.json"))["history"][-1]["id"])')"
+            git push
+          fi
